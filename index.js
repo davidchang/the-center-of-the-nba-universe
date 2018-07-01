@@ -1,6 +1,6 @@
 const nba = require('nba.js').default;
 
-async function getTeammatesForTeamAndSeason(teamName, year) {
+async function getTeamRosterForYear(teamName, year) {
   let teamInfo;
   try {
     teamInfo = await nba.data.teamRoster({
@@ -18,7 +18,7 @@ async function getTeammatesForTeamAndSeason(teamName, year) {
   return teamInfo.league.standard.players.map(({ personId }) => personId);
 }
 
-async function getAllTeammatesForYear(year) {
+async function getTeamRostersForYear(year) {
   const teams = await nba.data.teams({ year });
 
   const filteredTeams = teams.league.standard
@@ -26,13 +26,13 @@ async function getAllTeammatesForYear(year) {
     .map(({ urlName }) => urlName);
 
   return await Promise.all(
-    filteredTeams.map(team => getTeammatesForTeamAndSeason(team, year)),
+    filteredTeams.map(team => getTeamRosterForYear(team, year)),
   );
 }
 
 async function doEverything() {
   const ACTIVE_SEASON = 2017;
-  const mostRecentSeason = await getAllTeammatesForYear(ACTIVE_SEASON);
+  const mostRecentSeason = await getTeamRostersForYear(ACTIVE_SEASON);
   const activePlayersSet = mostRecentSeason.reduce((acc, cur) => [
     ...acc,
     ...cur,
@@ -42,7 +42,7 @@ async function doEverything() {
 
   // works for 2015, everything before that actually 404s
   while (yearToQuery >= 2015) {
-    const season = await getAllTeammatesForYear(yearToQuery);
+    const season = await getTeamRostersForYear(yearToQuery);
     const seasonPlayers = season.reduce((acc, cur) => [...acc, ...cur]);
 
     if (seasonPlayers.every(player => !activePlayersSet.includes(player))) {

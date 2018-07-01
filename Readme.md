@@ -14,7 +14,7 @@ Construct a map of edges from player to player (an "adjacency list")
     for each team,
       create edges between each set of teammates on that team, as long as that teammate is in the set of active NBA players
 
-Find some graph theory library that can just run BFS for me. Make sure that the formats from the previous steps work properly with whatever the graph theory library wants.
+Find some graph theory library that can just run BFS for me. Make sure that the formats from the previous step works properly with whatever the graph theory library wants.
 
 starting from each NBA player,
   run BFS. calculate some score (this score may be the depth of the traversal, or may take into account all nodes and the depths at which they occur)
@@ -34,41 +34,57 @@ Construct a map of edges from player to player:
 ## Getting the Data
 
 At first, I overwhelmed myself a little by trying to process the data in the same step as just getting the data. For this use case, that's needlessly complicated. We can just take two steps - get the data first, then process it second.
-I knew there was an ESPN API for stuff like this, but when it looked, it seemed like the free public tier was shut down and you had to be some sort of private partner with them. I found a package on npm called [nba](https://www.npmjs.com/package/nba), so I'm gonna use that. I'm not totally sure if everything's up-to-date, because I see some files storing all players and teams, but I'm just going to assume that it works, and it should be something I can replace later.
+I knew there was an ESPN API for stuff like this, but when it looked, it seemed like the free public tier was shut down and you had to be some sort of private partner with them. I then found a few packages that use the public API endpoints that power nba.com - one was called [nba](https://www.npmjs.com/package/nba) and another [nba.js](https://www.npmjs.com/package/nba.js). There's a bunch of weird stuff about how the nba stats endpoint is super flaky - some calls go through, some will just hang indefinitely. I experienced it as well intermittently, where all my calls would succeed five times in a row, to then just hang five times in a row. I was feeling uneasy because I'm going to need to make a ton of requests (one for each team for each relevant season - about 450 times assuming 30 teams over 15 seasons) and I don't want to worry about retry logic. Apparently there's another endpoint called data which is more stable, so I started using that, but any request for a team roster prior to 2015 threw a 404.
+
+I went ahead and wrote my code broken up into various async functions (by the way, I didn't even realize that Node had async/await support, so that was cool!), so I should be able to crawl some NBA site, store the data in some files, and then just reimplement those specific functions. The original logic should still work just the same.
 
 ```
 mkdir nba-degrees-of-separation && cd $_
-yarn add nba
-```
-
-From the npm module's *Getting Started* section, I created an `index.js` and put this in here to test:
-
-```
-const NBA = require('nba');
-const curry = NBA.findPlayer('Stephen Curry');
-console.log(curry);
-NBA.stats.playerInfo({ PlayerID: curry.playerId }).then(console.log);
+yarn add nba.js
 ```
 
 ### Get the set of all active NBA players
 
-There's two ways we could do this. The first uses a synchronous function from the `nba` npm module that has a preprocessed list of players available (based on some script being run). The only thing we will do is filter out players where teamId === 0 (this seems to be the case where a player is waived by a team or ends the season in the G League).
+We're going to implement a function that gets all teams for a season, then gets all of the team rosters for that season. We'll make use of this function as we look back on past seasons too, so we will use it on the past 2017-2018 season to grab all team rosters, which we'll then be able to flatten to make up our active set.
+
+Here's the function to get a single team roster:
 
 ```
-function getActiveSet() {
-  const playerIDMap = {};
-  NBA.players.forEach((player) => {
-    if (!player.teamId) {
-      return;
-    }
+async function getTeamRosterForYear(teamName, year) {
+  let teamInfo;
+  try {
+    teamInfo = await nba.data.teamRoster({
+      teamName,
+      year,
+    });
+  } catch (e) {
+    console.log('failed for ', teamName, year, e);
+  }
 
-    playerIDMap[player.playerId] = player;
-  });
+  if (!teamInfo) {
+    return [];
+  }
 
-  return playerIDMap;
+  return teamInfo.league.standard.players.map(({ personId }) => personId);
 }
 ```
 
-That active set ends up having 492 players in it, so there will be 492 nodes in our graph.
+And here's what we need to do to call that function for all teams:
+
+```
+async function getTeamRostersForYear(year) {
+  const teams = await nba.data.teams({ year });
+
+  const filteredTeams = teams.league.standard
+    .filter(team => team.isNBAFranchise)
+    .map(({ urlName }) => urlName);
+
+  return await Promise.all(
+    filteredTeams.map(team => getTeamRosterForYear(team, year)),
+  );
+}
+```
+
+Running for year 2017, we find that the active set ends up having a length of 505, so there will be 505 nodes in our graph.
 
 ### Construct the adjacency list
