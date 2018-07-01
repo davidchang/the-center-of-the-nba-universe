@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "js-graph-algorithms": "^1.0.18",
     "nba.js": "^0.6.1"
   }
 }

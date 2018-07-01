@@ -1,4 +1,5 @@
 const nba = require('nba.js').default;
+const jsgraphs = require('js-graph-algorithms');
 
 async function getTeamRosterForYear(teamName, year) {
   let teamInfo;
@@ -15,7 +16,15 @@ async function getTeamRosterForYear(teamName, year) {
     return [];
   }
 
-  return teamInfo.league.standard.players.map(({ personId }) => personId);
+  return teamInfo.league.standard.players
+    .map(({ personId }) => personId)
+    .reduce((acc, cur) => {
+      // there are a bunch of dupes for some reason
+      if (acc.includes(cur)) {
+        return acc;
+      }
+      return [...acc, cur];
+    }, []);
 }
 
 async function getTeamRostersForYear(year) {
@@ -30,6 +39,37 @@ async function getTeamRostersForYear(year) {
   );
 }
 
+function createGraph(activePlayersSet, teammatesPairs) {
+  const g = new jsgraphs.Graph(activePlayersSet.length);
+
+  teammatesPairs.forEach(season => {
+    // console.log('start of season', season.length);
+
+    season.forEach((team, index) => {
+      // if (index !== 0) {
+      //   return;
+      // }
+
+      // console.log('team', team);
+
+      const playerIndices = team.map(player =>
+        activePlayersSet.findIndex(el => el === player),
+      );
+
+      // console.log('playerIndices', playerIndices);
+
+      for (var i = 0; i < playerIndices.length; ++i) {
+        for (var j = i + 1; j < playerIndices.length; ++j) {
+          console.log(`connecting ${playerIndices[i]} to ${playerIndices[j]}`);
+          g.addEdge(playerIndices[i], playerIndices[j]);
+        }
+      }
+    });
+  });
+
+  return g;
+}
+
 async function doEverything() {
   const ACTIVE_SEASON = 2017;
   const mostRecentSeason = await getTeamRostersForYear(ACTIVE_SEASON);
@@ -40,8 +80,11 @@ async function doEverything() {
 
   let yearToQuery = ACTIVE_SEASON - 1;
 
+  const teamRosters = [];
+
   // works for 2015, everything before that actually 404s
   while (yearToQuery >= 2015) {
+    console.log('yearToQuery', yearToQuery);
     const season = await getTeamRostersForYear(yearToQuery);
     const seasonPlayers = season.reduce((acc, cur) => [...acc, ...cur]);
 
@@ -49,12 +92,24 @@ async function doEverything() {
       break;
     }
 
-    console.log('yearToQuery', yearToQuery);
-
+    teamRosters.push(
+      season.map(team =>
+        team.filter(player => activePlayersSet.includes(player)),
+      ),
+    );
     yearToQuery--;
   }
 
-  console.log(activePlayersSet.length);
+  const g = createGraph(activePlayersSet, [mostRecentSeason, ...teamRosters]);
+
+  const bfs = new jsgraphs.BreadthFirstSearch(g, 0);
+  for (var i = 1; i < 3 /*activePlayersSet.length*/; ++i) {
+    if (bfs.hasPathTo(i)) {
+      console.log(`path to ${i}`, bfs.pathTo(i));
+    } else {
+      console.log(`no path to ${i}`);
+    }
+  }
 }
 
 doEverything();
