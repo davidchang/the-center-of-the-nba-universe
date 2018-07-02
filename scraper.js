@@ -1,6 +1,7 @@
 const rp = require('request-promise');
 const cheerio = require('cheerio');
 const nba = require('nba.js').default;
+const fs = require('fs');
 
 let activePlayersMap = {};
 const playersMap = {};
@@ -12,6 +13,8 @@ async function retrieveTeamOneYear(team, year) {
     uri: `http://www.espn.com/nba/team/stats/_/name/${team}/year/${year}/seasontype/2`,
     transform: body => cheerio.load(body),
   });
+
+  const seasonTeammates = [];
 
   $('div.mod-table div.mod-content')
     .first()
@@ -26,9 +29,11 @@ async function retrieveTeamOneYear(team, year) {
 
       // modify these global states!
       playersMap[id] = name;
-      teammateSets[team] = teammateSets[team] || [];
-      teammateSets[team].push(id);
+      seasonTeammates.push(id);
     });
+
+  teammateSets[team] = teammateSets[team] || [];
+  teammateSets[team].push(seasonTeammates);
 }
 
 async function retrieveAllTeams() {
@@ -60,9 +65,33 @@ async function retrieveAllTeams() {
 async function main() {
   await retrieveAllTeams();
 
-  // activePlayersMap
-  // playersMap
-  // teammateSets
+  fs.writeFile(
+    'data/activePlayers.json',
+    JSON.stringify(activePlayersMap),
+    err => {
+      if (err) {
+        return console.log(err);
+      }
+
+      console.log('Active players file was saved!');
+    },
+  );
+
+  fs.writeFile('data/playersMap.json', JSON.stringify(playersMap), err => {
+    if (err) {
+      return console.log(err);
+    }
+
+    console.log('Players map file was saved!');
+  });
+
+  fs.writeFile('data/teammateSets.json', JSON.stringify(teammateSets), err => {
+    if (err) {
+      return console.log(err);
+    }
+
+    console.log('Teammate sets file was saved!');
+  });
 }
 
 main();
