@@ -1,5 +1,4 @@
 const nba = require('nba.js').default;
-const jsgraphs = require('js-graph-algorithms');
 
 async function getTeamRosterForYear(teamName, year) {
   let teamInfo;
@@ -39,35 +38,82 @@ async function getTeamRostersForYear(year) {
   );
 }
 
-function createGraph(activePlayersSet, teammatesPairs) {
-  const g = new jsgraphs.Graph(activePlayersSet.length);
+function createGraph(seasons) {
+  const graph = {};
+  seasons.forEach(rosters => {
+    rosters.forEach(team => {
+      for (var i = 0; i < team.length; ++i) {
+        for (var j = 0; j < team.length; ++j) {
+          if (i === j) {
+            continue;
+          }
 
-  teammatesPairs.forEach(season => {
-    // console.log('start of season', season.length);
-
-    season.forEach((team, index) => {
-      // if (index !== 0) {
-      //   return;
-      // }
-
-      // console.log('team', team);
-
-      const playerIndices = team.map(player =>
-        activePlayersSet.findIndex(el => el === player),
-      );
-
-      // console.log('playerIndices', playerIndices);
-
-      for (var i = 0; i < playerIndices.length; ++i) {
-        for (var j = i + 1; j < playerIndices.length; ++j) {
-          console.log(`connecting ${playerIndices[i]} to ${playerIndices[j]}`);
-          g.addEdge(playerIndices[i], playerIndices[j]);
+          graph[team[i]] = graph[team[i]] || { links: [] };
+          if (!graph[team[i]].links.includes(team[j])) {
+            graph[team[i]].links.push(team[j]);
+          }
         }
       }
     });
   });
 
+  return graph;
+}
+
+function runBFS(g, start) {
+  Object.values(g).forEach(player => {
+    player.visited = false;
+    delete player.depth;
+  });
+
+  let listToExplore = [start];
+  let nextListToExplore = [];
+  let depth = 0;
+
+  while (listToExplore.length) {
+    listToExplore.forEach(curNode => {
+      if (g[curNode].visited) {
+        return;
+      }
+
+      g[curNode].visited = true;
+      g[curNode].depth = depth;
+      (g[curNode].links || []).forEach(curLink => {
+        if (!nextListToExplore.includes(curLink) && !g[curLink].visited) {
+          nextListToExplore.push(curLink);
+        }
+      });
+    });
+
+    listToExplore = [...nextListToExplore];
+    nextListToExplore = [];
+    depth++;
+  }
+
   return g;
+}
+
+function calculateBFSResultsScore(activePlayersSet, bfsResults) {
+  const parsedResults = Object.keys(bfsResults).reduce((acc, playerID) => {
+    if (!activePlayersSet.includes(playerID)) {
+      return acc;
+    }
+
+    const depth = bfsResults[playerID].depth;
+    acc[depth] = acc[depth] || 0;
+    acc[depth]++;
+    return acc;
+  }, {});
+
+  const score = Object.entries(parsedResults).reduce((acc, [depth, count]) => {
+    if (+depth === 0) {
+      return acc;
+    }
+
+    return acc + count / (+depth * +depth);
+  }, 0);
+
+  return { score, results: parsedResults };
 }
 
 async function doEverything() {
@@ -100,16 +146,23 @@ async function doEverything() {
     yearToQuery--;
   }
 
-  const g = createGraph(activePlayersSet, [mostRecentSeason, ...teamRosters]);
+  const g = createGraph([mostRecentSeason, ...teamRosters]);
 
-  const bfs = new jsgraphs.BreadthFirstSearch(g, 0);
-  for (var i = 1; i < 3 /*activePlayersSet.length*/; ++i) {
-    if (bfs.hasPathTo(i)) {
-      console.log(`path to ${i}`, bfs.pathTo(i));
-    } else {
-      console.log(`no path to ${i}`);
-    }
-  }
+  const playersWithScores = activePlayersSet.map(player => {
+    const bfsResults = runBFS(g, player);
+
+    const { score, results } = calculateBFSResultsScore(
+      activePlayersSet,
+      bfsResults,
+    );
+    return [player, score, results];
+  });
+
+  console.log(
+    playersWithScores.sort(function(a, b) {
+      return a[1] - b[1];
+    }),
+  );
 }
 
 doEverything();
