@@ -67,13 +67,17 @@ function calculateBFSResultsScore(activePlayersSet, bfsResults) {
     return acc;
   }, {});
 
-  const score = Object.entries(parsedResults).reduce((acc, [depth, count]) => {
-    if (+depth === 0) {
-      return acc;
-    }
+  // adding 100 * (4-length) because we need to make sure to reward players with
+  // fewer overall connections
+  const score =
+    Object.entries(parsedResults).reduce((acc, [depth, count]) => {
+      if (+depth === 0) {
+        return acc;
+      }
 
-    return acc + count / (+depth * +depth);
-  }, 0);
+      return acc + count / (+depth * +depth);
+    }, 0) +
+    1000 * (4 - Object.keys(parsedResults).length);
 
   return { score, results: parsedResults };
 }
