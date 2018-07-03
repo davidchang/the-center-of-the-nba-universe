@@ -1,42 +1,4 @@
-const nba = require('nba.js').default;
-
-async function getTeamRosterForYear(teamName, year) {
-  let teamInfo;
-  try {
-    teamInfo = await nba.data.teamRoster({
-      teamName,
-      year,
-    });
-  } catch (e) {
-    console.log('failed for ', teamName, year, e);
-  }
-
-  if (!teamInfo) {
-    return [];
-  }
-
-  return teamInfo.league.standard.players
-    .map(({ personId }) => personId)
-    .reduce((acc, cur) => {
-      // there are a bunch of dupes for some reason
-      if (acc.includes(cur)) {
-        return acc;
-      }
-      return [...acc, cur];
-    }, []);
-}
-
-async function getTeamRostersForYear(year) {
-  const teams = await nba.data.teams({ year });
-
-  const filteredTeams = teams.league.standard
-    .filter(team => team.isNBAFranchise)
-    .map(({ urlName }) => urlName);
-
-  return await Promise.all(
-    filteredTeams.map(team => getTeamRosterForYear(team, year)),
-  );
-}
+const fs = require('fs');
 
 function createGraph(seasons) {
   const graph = {};
@@ -117,52 +79,43 @@ function calculateBFSResultsScore(activePlayersSet, bfsResults) {
 }
 
 async function doEverything() {
-  const ACTIVE_SEASON = 2017;
-  const mostRecentSeason = await getTeamRostersForYear(ACTIVE_SEASON);
-  const activePlayersSet = mostRecentSeason.reduce((acc, cur) => [
-    ...acc,
-    ...cur,
-  ]);
+  const activePlayerIDs = Object.keys(
+    // file structure is Object, key = playerID, value = player name
+    JSON.parse(fs.readFileSync('data/activePlayers.json')),
+  );
 
-  let yearToQuery = ACTIVE_SEASON - 1;
+  // file structure is Object, key = playerID, value = player name
+  const playersMap = JSON.parse(fs.readFileSync('data/activePlayers.json'));
 
-  const teamRosters = [];
+  // file structure is Object, key = team name, value = array of arrays of
+  // playerIDs, representing the team roster for a year
+  const data = JSON.parse(fs.readFileSync('data/teammateSets.json'));
+  const g = createGraph(Object.values(data));
 
-  // works for 2015, everything before that actually 404s
-  while (yearToQuery >= 2015) {
-    console.log('yearToQuery', yearToQuery);
-    const season = await getTeamRostersForYear(yearToQuery);
-    const seasonPlayers = season.reduce((acc, cur) => [...acc, ...cur]);
-
-    if (seasonPlayers.every(player => !activePlayersSet.includes(player))) {
-      break;
-    }
-
-    teamRosters.push(
-      season.map(team =>
-        team.filter(player => activePlayersSet.includes(player)),
-      ),
-    );
-    yearToQuery--;
-  }
-
-  const g = createGraph([mostRecentSeason, ...teamRosters]);
-
-  const playersWithScores = activePlayersSet.map(player => {
+  const playersWithScores = activePlayerIDs.map(player => {
     const bfsResults = runBFS(g, player);
 
     const { score, results } = calculateBFSResultsScore(
-      activePlayersSet,
+      activePlayerIDs,
       bfsResults,
     );
-    return [player, score, results];
+    return [playersMap[player], score, results];
   });
 
   console.log(
+    // higher scores will come first
     playersWithScores.sort(function(a, b) {
-      return a[1] - b[1];
+      return b[1] - a[1];
     }),
   );
+
+  fs.writeFile('data/results.json', JSON.stringify(playersWithScores), err => {
+    if (err) {
+      return console.log(err);
+    }
+
+    console.log('Players with BFS scores file was saved!');
+  });
 }
 
 doEverything();
